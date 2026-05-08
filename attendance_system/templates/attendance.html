@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mark Attendance - Attendance System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-green-600 mb-2">Mark Attendance</h1>
+            <p class="text-gray-600">Capture your face to automatically mark attendance</p>
+            <a href="/" class="inline-block mt-4 text-white-500 hover:text-black-700 bg-blue-500 rounded-lg w-40 h-8 text-lg">← Back to Home</a>
+        </header>
+        <div class="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-6">
+            <!-- Camera Section -->
+            <div class="mb-6">
+                <div class="bg-gray-800 rounded-lg overflow-hidden mb-4">
+                    <video id="video" width="640" height="480" autoplay class="w-full"></video>
+                </div>
+                <div class="flex justify-center space-x-4">
+                    <button id="markAttendanceBtn" class="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-semibold text-lg transition-colors">
+                        Mark Attendance
+                    </button>
+                    <button id="startCamera" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors">
+                        Start Camera
+                    </button>
+                </div>
+            </div>
+
+            <!-- Status Message -->
+            <div id="statusMessage" class="mt-4 text-center hidden"></div>
+
+            <!-- Recent Attendance -->
+            <div class="mt-8">
+                <h3 class="text-xl font-semibold text-gray-800 mb-4">Recent Attendance</h3>
+                <div id="recentAttendance" class="bg-gray-50 rounded-lg p-4">
+                    <!-- Recent records will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const markAttendanceBtn = document.getElementById('markAttendanceBtn');
+        const startCameraBtn = document.getElementById('startCamera');
+        const statusMessage = document.getElementById('statusMessage');
+        const recentAttendance = document.getElementById('recentAttendance');
+
+        let stream = null;
+
+        // Start camera
+        startCameraBtn.addEventListener('click', async () => {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                markAttendanceBtn.disabled = false;
+                showStatus('Camera started successfully!', 'success');
+            } catch (err) {
+                showStatus('Error accessing camera: ' + err.message, 'error');
+            }
+        });
+
+        // Mark attendance
+        markAttendanceBtn.addEventListener('click', async () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const context = canvas.getContext('2d');
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            const imageData = canvas.toDataURL('image/jpeg');
+
+            markAttendanceBtn.disabled = true;
+            markAttendanceBtn.textContent = 'Processing...';
+
+            try {
+                const formData = new FormData();
+                formData.append('image', imageData);
+
+                const response = await fetch('/api/mark_attendance', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    showStatus(result.message, 'success');
+                    loadRecentAttendance();
+                } else {
+                    showStatus(result.message, 'error');
+                }
+                
+            } catch (error) {
+                showStatus('Error: ' + error.message, 'error');
+            } finally {
+                markAttendanceBtn.disabled = false;
+                markAttendanceBtn.textContent = 'Mark Attendance';
+            }
+        });
+
+        // Load recent attendance
+        async function loadRecentAttendance() {
+            try {
+                const response = await fetch('/api/get_attendance');
+                const result = await response.json();
+                
+                if (result.success && result.data.length > 0) {
+                    const recent = result.data.slice(0, 5);
+                    recentAttendance.innerHTML = recent.map(record => `
+                        <div class="flex justify-between items-center py-2 border-b border-gray-200">
+                            <div>
+                                <span class="font-semibold">${record.name}</span>
+                                <span class="text-sm text-gray-500 ml-2">${record.date} ${record.time}</span>
+                            </div>
+                            <span class="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">Present</span>
+                        </div>
+                    `).join('');
+                } else {
+                    recentAttendance.innerHTML = '<p class="text-gray-500 text-center">No attendance records found</p>';
+                }
+            } catch (error) {
+                recentAttendance.innerHTML = '<p class="text-red-500 text-center">Error loading records</p>';
+            }
+        }
+
+        // Show status message
+        function showStatus(message, type) {
+            statusMessage.textContent = message;
+            statusMessage.className = 'mt-4 text-center p-3 rounded-lg ' + 
+                (type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700');
+            statusMessage.classList.remove('hidden');
+            
+            setTimeout(() => {
+                statusMessage.classList.add('hidden');
+            }, 5000);
+        }
+
+        // Load recent attendance on page load
+        loadRecentAttendance();
+    </script>
+</body>
+</html>

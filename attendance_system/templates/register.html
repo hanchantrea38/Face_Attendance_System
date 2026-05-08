@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register Face - Attendance System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-blue-600 mb-2">Register New Face</h1>
+            <p class="text-gray-600">Capture images to register faces for attendance tracking</p>
+            <a href="/" class="inline-block mt-4 text-white-500 hover:text-black-700 bg-blue-500 rounded-lg w-40 h-8 text-lg">← Back to Home</a>
+        </header>
+
+        <div class="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-6">
+            <!-- Camera Section -->
+            <div class="mb-6">
+                <div class="bg-gray-800 rounded-lg overflow-hidden mb-4">
+                    <video id="video" width="640" height="480" autoplay class="w-full"></video>
+                </div>
+                <div class="flex justify-center space-x-4">
+                    <button id="captureBtn" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold transition-colors">
+                        Capture Image
+                    </button>
+                    <button id="startCamera" class="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-lg font-semibold transition-colors">
+                        Start Camera
+                    </button>
+                </div>
+            </div>
+
+            <!-- Name Input -->
+            <div class="mb-6">
+                <label for="name" class="block text-sm font-medium text-gray-700 mb-2">Enter Name</label>
+                <input type="text" id="name" placeholder="Enter person's name" 
+                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+
+            <!-- Preview Section -->
+            <div class="mb-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-3">Captured Images</h3>
+                <div id="previewContainer" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <!-- Preview images will appear here -->
+                </div>
+            </div>
+
+            <!-- Register Button -->
+            <div class="text-center">
+                <button id="registerBtn" class="bg-purple-500 hover:bg-purple-600 text-white px-8 py-3 rounded-lg font-semibold text-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    Register Face
+                </button>
+            </div>
+
+            <!-- Status Message -->
+            <div id="statusMessage" class="mt-4 text-center hidden"></div>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const captureBtn = document.getElementById('captureBtn');
+        const startCameraBtn = document.getElementById('startCamera');
+        const registerBtn = document.getElementById('registerBtn');
+        const previewContainer = document.getElementById('previewContainer');
+        const statusMessage = document.getElementById('statusMessage');
+        const nameInput = document.getElementById('name');
+
+        let stream = null;
+        const capturedImages = [];
+
+        // Start camera
+        startCameraBtn.addEventListener('click', async () => {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                captureBtn.disabled = false;
+                showStatus('Camera started successfully!', 'success');
+            } catch (err) {
+                showStatus('Error accessing camera: ' + err.message, 'error');
+            }
+        });
+
+        // Capture image
+        captureBtn.addEventListener('click', () => {
+            if (!nameInput.value.trim()) {
+                showStatus('Please enter a name first', 'error');
+                return;
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const context = canvas.getContext('2d');
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            const imageData = canvas.toDataURL('image/jpeg');
+            capturedImages.push(imageData);
+            
+            // Create preview
+            const preview = document.createElement('div');
+            preview.className = 'relative';
+            preview.innerHTML = `
+                <img src="${imageData}" class="w-full h-32 object-cover rounded-lg">
+                <button class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 text-xs" onclick="removeImage(${capturedImages.length - 1})">×</button>
+            `;
+            previewContainer.appendChild(preview);
+            
+            showStatus('Image captured successfully!', 'success');
+        });
+
+        // Register face
+        registerBtn.addEventListener('click', async () => {
+            if (!nameInput.value.trim()) {
+                showStatus('Please enter a name', 'error');
+                return;
+            }
+
+            if (capturedImages.length === 0) {
+                showStatus('Please capture at least one image', 'error');
+                return;
+            }
+
+            registerBtn.disabled = true;
+            registerBtn.textContent = 'Registering...';
+
+            try {
+                // Send all captured images
+                for (const imageData of capturedImages) {
+                    const formData = new FormData();
+                    formData.append('name', nameInput.value);
+                    formData.append('image', imageData);
+
+                    const response = await fetch('/api/register_face', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const result = await response.json();
+                    
+                    if (!result.success) {
+                        showStatus('Error: ' + result.message, 'error');
+                        registerBtn.disabled = false;
+                        registerBtn.textContent = 'Register Face';
+                        return;
+                    }
+                }
+
+                showStatus('Face registered successfully!', 'success');
+                capturedImages.length = 0;
+                previewContainer.innerHTML = '';
+                nameInput.value = '';
+                
+            } catch (error) {
+                showStatus('Error: ' + error.message, 'error');
+            } finally {
+                registerBtn.disabled = false;
+                registerBtn.textContent = 'Register Face';
+            }
+        });
+
+        // Remove image from preview
+        window.removeImage = (index) => {
+            capturedImages.splice(index, 1);
+            previewContainer.innerHTML = '';
+            capturedImages.forEach((img, idx) => {
+                const preview = document.createElement('div');
+                preview.className = 'relative';
+                preview.innerHTML = `
+                    <img src="${img}" class="w-full h-32 object-cover rounded-lg">
+                    <button class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 text-xs" onclick="removeImage(${idx})">×</button>
+                `;
+                previewContainer.appendChild(preview);
+            });
+        };
+
+        // Show status message
+        function showStatus(message, type) {
+            statusMessage.textContent = message;
+            statusMessage.className = 'mt-4 text-center p-3 rounded-lg ' + 
+                (type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700');
+            statusMessage.classList.remove('hidden');
+            
+            setTimeout(() => {
+                statusMessage.classList.add('hidden');
+            }, 5000);
+        }
+    </script>
+</body>
+</html>

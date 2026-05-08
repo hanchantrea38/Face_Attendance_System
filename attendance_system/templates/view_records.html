@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>View Records - Attendance System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-purple-600 mb-2">Attendance Records</h1>
+            <p class="text-gray-600">View and manage all attendance records</p>
+            <div class="mt-4 space-x-4">
+                <a href="/" class="inline-block mt-4 text-white-500 hover:text-black-700 bg-blue-500 rounded-lg w-40 h-8 text-lg">← Back to Home</a>
+                <a href="/api/export_csv" class="inline-block bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-semibold transition-colors">
+                    Export CSV
+                </a>
+            </div>
+        </header>
+
+        <div class="max-w-6xl mx-auto bg-white rounded-lg shadow-md p-6">
+            <!-- Filters -->
+            <div class="mb-6 flex flex-wrap gap-4">
+                <input type="text" id="searchInput" placeholder="Search by name..." 
+                       class="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500">
+                <input type="date" id="dateFilter" 
+                       class="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500">
+                <button id="clearFilters" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md transition-colors">
+                    Clear Filters
+                </button>
+            </div>
+
+            <!-- Records Table -->
+            <div class="overflow-x-auto">
+                <table class="w-full border-collapse border border-gray-300">
+                    <thead>
+                        <tr class="bg-gray-50">
+                            <th class="border border-gray-300 px-4 py-2 text-left">ID</th>
+                            <th class="border border-gray-300 px-4 py-2 text-left">Name</th>
+                            <th class="border border-gray-300 px-4 py-2 text-left">Date</th>
+                            <th class="border border-gray-300 px-4 py-2 text-left">Time</th>
+                            <th class="border border-gray-300 px-4 py-2 text-left">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recordsTable">
+                        <!-- Records will be loaded here -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Loading and Empty States -->
+            <div id="loadingMessage" class="text-center py-8">
+                <p class="text-gray-500">Loading records...</p>
+            </div>
+            <div id="emptyMessage" class="text-center py-8 hidden">
+                <p class="text-gray-500">No attendance records found</p>
+            </div>
+
+            <!-- Statistics -->
+            <div class="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-blue-50 rounded-lg p-4 text-center">
+                    <h3 class="text-lg font-semibold text-blue-700">Total Records</h3>
+                    <p id="totalRecords" class="text-2xl font-bold text-blue-600">0</p>
+                </div>
+                <div class="bg-green-50 rounded-lg p-4 text-center">
+                    <h3 class="text-lg font-semibold text-green-700">Unique Persons</h3>
+                    <p id="uniquePersons" class="text-2xl font-bold text-green-600">0</p>
+                </div>
+                <div class="bg-purple-50 rounded-lg p-4 text-center">
+                    <h3 class="text-lg font-semibold text-purple-700">Latest Entry</h3>
+                    <p id="latestEntry" class="text-sm font-bold text-purple-600">-</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const recordsTable = document.getElementById('recordsTable');
+        const loadingMessage = document.getElementById('loadingMessage');
+        const emptyMessage = document.getElementById('emptyMessage');
+        const searchInput = document.getElementById('searchInput');
+        const dateFilter = document.getElementById('dateFilter');
+        const clearFilters = document.getElementById('clearFilters');
+        const totalRecords = document.getElementById('totalRecords');
+        const uniquePersons = document.getElementById('uniquePersons');
+        const latestEntry = document.getElementById('latestEntry');
+
+        let allRecords = [];
+
+        // Load records on page load
+        document.addEventListener('DOMContentLoaded', loadRecords);
+
+        // Filter records
+        searchInput.addEventListener('input', filterRecords);
+        dateFilter.addEventListener('change', filterRecords);
+        clearFilters.addEventListener('click', () => {
+            searchInput.value = '';
+            dateFilter.value = '';
+            filterRecords();
+        });
+
+        async function loadRecords() {
+            try {
+                const response = await fetch('/api/get_attendance');
+                const result = await response.json();
+                
+                if (result.success) {
+                    allRecords = result.data;
+                    displayRecords(allRecords);
+                    updateStatistics(allRecords);
+                } else {
+                    showEmptyState();
+                }
+            } catch (error) {
+                showEmptyState();
+            }
+        }
+
+        function displayRecords(records) {
+            if (records.length === 0) {
+                showEmptyState();
+                return;
+            }
+
+            loadingMessage.classList.add('hidden');
+            emptyMessage.classList.add('hidden');
+
+            recordsTable.innerHTML = records.map(record => `
+                <tr class="hover:bg-gray-50">
+                    <td class="border border-gray-300 px-4 py-2">${record.id}</td>
+                    <td class="border border-gray-300 px-4 py-2 font-semibold">${record.name}</td>
+                    <td class="border border-gray-300 px-4 py-2">${record.date}</td>
+                    <td class="border border-gray-300 px-4 py-2">${record.time}</td>
+                    <td class="border border-gray-300 px-4 py-2">
+                        <span class="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">Present</span>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function filterRecords() {
+            const searchTerm = searchInput.value.toLowerCase();
+            const dateTerm = dateFilter.value;
+
+            const filtered = allRecords.filter(record => {
+                const matchesSearch = record.name.toLowerCase().includes(searchTerm);
+                const matchesDate = !dateTerm || record.date === dateTerm;
+                return matchesSearch && matchesDate;
+            });
+
+            displayRecords(filtered);
+            updateStatistics(filtered);
+        }
+
+        function updateStatistics(records) {
+            totalRecords.textContent = records.length;
+            
+            const uniqueNames = new Set(records.map(record => record.name));
+            uniquePersons.textContent = uniqueNames.size;
+            
+            if (records.length > 0) {
+                const latest = records[0];
+                latestEntry.textContent = `${latest.name} - ${latest.date} ${latest.time}`;
+            } else {
+                latestEntry.textContent = '-';
+            }
+        }
+
+        function showEmptyState() {
+            loadingMessage.classList.add('hidden');
+            emptyMessage.classList.remove('hidden');
+            recordsTable.innerHTML = '';
+            updateStatistics([]);
+        }
+    </script>
+</body>
+</html>
