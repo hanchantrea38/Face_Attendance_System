@@ -22,7 +22,7 @@
                     <video id="video" width="640" height="480" autoplay class="w-full"></video>
                 </div>
                 <div class="flex justify-center space-x-4">
-                    <button id="captureBtn" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold transition-colors">
+                    <button id="captureBtn" disabled class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                         Capture Image
                     </button>
                     <button id="startCamera" class="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-lg font-semibold transition-colors">
@@ -48,7 +48,7 @@
 
             <!-- Register Button -->
             <div class="text-center">
-                <button id="registerBtn" class="bg-purple-500 hover:bg-purple-600 text-white px-8 py-3 rounded-lg font-semibold text-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                <button id="registerBtn" disabled class="bg-purple-500 hover:bg-purple-600 text-white px-8 py-3 rounded-lg font-semibold text-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                     Register Face
                 </button>
             </div>
@@ -73,7 +73,7 @@
         // Start camera
         startCameraBtn.addEventListener('click', async () => {
             try {
-                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
                 video.srcObject = stream;
                 captureBtn.disabled = false;
                 showStatus('Camera started successfully!', 'success');
@@ -86,6 +86,11 @@
         captureBtn.addEventListener('click', () => {
             if (!nameInput.value.trim()) {
                 showStatus('Please enter a name first', 'error');
+                return;
+            }
+
+            if (!stream || video.videoWidth === 0 || video.videoHeight === 0) {
+                showStatus('Please start the camera first', 'error');
                 return;
             }
 
@@ -106,6 +111,7 @@
                 <button class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 text-xs" onclick="removeImage(${capturedImages.length - 1})">×</button>
             `;
             previewContainer.appendChild(preview);
+            registerBtn.disabled = false;
             
             showStatus('Image captured successfully!', 'success');
         });
@@ -151,6 +157,7 @@
                 capturedImages.length = 0;
                 previewContainer.innerHTML = '';
                 nameInput.value = '';
+                registerBtn.disabled = true;
                 
             } catch (error) {
                 showStatus('Error: ' + error.message, 'error');
@@ -173,6 +180,7 @@
                 `;
                 previewContainer.appendChild(preview);
             });
+            registerBtn.disabled = capturedImages.length === 0;
         };
 
         // Show status message

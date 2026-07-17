@@ -4,32 +4,66 @@ import numpy as np
 import os
 import sqlite3
 import csv
+from contextlib import closing
 from datetime import datetime
 import base64
 
 app = Flask(__name__)
 
 
+# =========================
+# Database connection
+# =========================
+# This app connects to this SQLite database file:
+# C:\...\attendance_system\database\attendance.db
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATABASE_FOLDER = os.path.join(BASE_DIR, 'database')
+DATABASE_NAME = 'attendance.db'
+DB_PATH = os.path.join(DATABASE_FOLDER, DATABASE_NAME)
+DATASET_FOLDER = os.path.join(BASE_DIR, 'dataset')
+TRAINED_DATA_FOLDER = os.path.join(BASE_DIR, 'trained_data')
+
+
+def get_db_connection():
+    os.makedirs(DATABASE_FOLDER, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
 
 # Initialize database
 def init_db():
-    conn = sqlite3.connect('database/attendance.db')
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS attendance
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  name TEXT NOT NULL,
-                  date TEXT NOT NULL,
-                  time TEXT NOT NULL)''')
-    conn.commit()
-    conn.close()
+    with closing(get_db_connection()) as conn:
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS attendance
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      name TEXT NOT NULL,
+                      date TEXT NOT NULL,
+                      time TEXT NOT NULL)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS students
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      name TEXT NOT NULL UNIQUE,
+                      image_count INTEGER NOT NULL DEFAULT 0,
+                      created_at TEXT NOT NULL,
+                      updated_at TEXT NOT NULL)''')
+        conn.commit()
+        print(f"Connected to database: {DB_PATH}")
 
 # Create necessary directories
-os.makedirs('dataset', exist_ok=True)
-os.makedirs('trained_data', exist_ok=True)
-os.makedirs('database', exist_ok=True)
+os.makedirs(DATASET_FOLDER, exist_ok=True)
+os.makedirs(TRAINED_DATA_FOLDER, exist_ok=True)
+os.makedirs(DATABASE_FOLDER, exist_ok=True)
 
 # Initialize face detector and recognizer
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+using_simple_recognizer = False
+SIMPLE_RECOGNIZER_THRESHOLD = 350.0
+LBPH_RECOGNIZER_THRESHOLD = 100.0
+
+
+def preprocess_face(face):
+    face = cv2.resize(face, (100, 100))
+    return cv2.equalizeHist(face)
 
 # Try different recognizer options
 try:
@@ -47,44 +81,79 @@ except AttributeError:
             def __init__(self):
                 self.labels = []
                 self.faces = []
-                self.label_map = {}
+                self.features = []
+
+            def extract_features(self, face):
+                face = preprocess_face(face)
+                center = face[1:-1, 1:-1]
+                codes = np.zeros_like(center, dtype=np.uint8)
+                neighbors = [
+                    face[:-2, :-2], face[:-2, 1:-1], face[:-2, 2:],
+                    face[1:-1, 2:], face[2:, 2:], face[2:, 1:-1],
+                    face[2:, :-2], face[1:-1, :-2]
+                ]
+
+                for bit, neighbor in enumerate(neighbors):
+                    codes |= ((neighbor >= center).astype(np.uint8) << bit)
+
+                grid_size = 8
+                height, width = codes.shape
+                features = []
+
+                for row in range(grid_size):
+                    for col in range(grid_size):
+                        cell = codes[
+                            row * height // grid_size:(row + 1) * height // grid_size,
+                            col * width // grid_size:(col + 1) * width // grid_size
+                        ]
+                        hist, _ = np.histogram(cell, bins=256, range=(0, 256))
+                        hist = hist.astype('float32')
+                        hist /= hist.sum() + 1e-7
+                        features.append(hist)
+
+                return np.concatenate(features)
                 
             def train(self, faces, labels):
-                self.faces = faces
-                self.labels = labels
-                # Simple training - just store the data
+                self.faces = [preprocess_face(face) for face in faces]
+                self.labels = np.array(labels)
+                self.features = np.array([self.extract_features(face) for face in self.faces])
                 
             def predict(self, face):
-                # Simple distance-based recognition
-                if not self.faces:
+                if len(self.features) == 0:
                     return (0, 1000)
                 
                 min_dist = float('inf')
                 best_label = 0
+                feature = self.extract_features(face)
                 
-                for i, trained_face in enumerate(self.faces):
-                    if trained_face.shape == face.shape:
-                        dist = np.sqrt(np.sum((trained_face - face) ** 2))
-                        if dist < min_dist:
-                            min_dist = dist
-                            best_label = self.labels[i]
+                for i, trained_feature in enumerate(self.features):
+                    dist = 0.5 * np.sum(
+                        ((trained_feature - feature) ** 2) /
+                        (trained_feature + feature + 1e-7)
+                    )
+                    if dist < min_dist:
+                        min_dist = dist
+                        best_label = self.labels[i]
                 
-                confidence = min(100, max(0, min_dist / 10))
-                return (best_label, confidence)
+                return (int(best_label), float(min_dist))
                 
             def save(self, filename):
                 # Save training data
-                np.savez(filename, faces=self.faces, labels=self.labels, label_map=self.label_map)
+                np.savez(filename, faces=np.array(self.faces), labels=self.labels, features=self.features)
                 
             def read(self, filename):
                 # Load training data
                 if os.path.exists(filename):
                     data = np.load(filename, allow_pickle=True)
-                    self.faces = data['faces']
+                    self.faces = list(data['faces'])
                     self.labels = data['labels']
-                    self.label_map = data['label_map'].item()
+                    if 'features' in data:
+                        self.features = data['features']
+                    else:
+                        self.features = np.array([self.extract_features(face) for face in self.faces])
         
         recognizer = SimpleFaceRecognizer()
+        using_simple_recognizer = True
         print("Using simple face recognizer")
 
 init_db()
@@ -108,8 +177,11 @@ def view_records():
 @app.route('/api/register_face', methods=['POST'])
 def register_face():
     try:
-        name = request.form['name']
+        name = request.form['name'].strip()
         image_data = request.form['image']
+
+        if not name:
+            return jsonify({'success': False, 'message': 'Please enter a name'})
         
         # Convert base64 image to OpenCV format
         image_data = image_data.split(',')[1]
@@ -124,7 +196,7 @@ def register_face():
             return jsonify({'success': False, 'message': 'No face detected'})
         
         # Save face images for training
-        face_dir = f'dataset/{name}'
+        face_dir = os.path.join(DATASET_FOLDER, name)
         os.makedirs(face_dir, exist_ok=True)
         
         count = len([f for f in os.listdir(face_dir) if f.endswith('.jpg')])
@@ -132,9 +204,20 @@ def register_face():
         for (x, y, w, h) in faces:
             face_roi = gray[y:y+h, x:x+w]
             # Resize to standard size for better recognition
-            face_roi = cv2.resize(face_roi, (100, 100))
-            cv2.imwrite(f'{face_dir}/{count + 1}.jpg', face_roi)
+            face_roi = preprocess_face(face_roi)
+            cv2.imwrite(os.path.join(face_dir, f'{count + 1}.jpg'), face_roi)
             count += 1
+
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        with closing(get_db_connection()) as conn:
+            c = conn.cursor()
+            c.execute('''INSERT INTO students (name, image_count, created_at, updated_at)
+                         VALUES (?, ?, ?, ?)
+                         ON CONFLICT(name) DO UPDATE SET
+                            image_count = excluded.image_count,
+                            updated_at = excluded.updated_at''',
+                      (name, count, current_time, current_time))
+            conn.commit()
         
         # Train the recognizer
         train_recognizer()
@@ -162,27 +245,29 @@ def mark_attendance():
             return jsonify({'success': False, 'message': 'No face detected'})
         
         # Load trained recognizer
-        if os.path.exists('trained_data/trainer.yml'):
-            try:
-                recognizer.read('trained_data/trainer.yml')
-            except:
-                # Try loading from NPZ if using simple recognizer
-                if hasattr(recognizer, 'read'):
-                    recognizer.read('trained_data/trainer.npz')
+        trainer_path = os.path.join(TRAINED_DATA_FOLDER, 'trainer.yml')
+        trainer_npz_path = os.path.join(TRAINED_DATA_FOLDER, 'trainer.npz')
+        model_path = trainer_npz_path if using_simple_recognizer else trainer_path
+        if os.path.exists(model_path):
+            recognizer.read(model_path)
+        else:
+            return jsonify({'success': False, 'message': 'No trained face data found. Please register a face first.'})
         
         recognized_names = []
+        already_marked_names = []
         
         for (x, y, w, h) in faces:
             face_roi = gray[y:y+h, x:x+w]
             # Resize to match training size
-            face_roi = cv2.resize(face_roi, (100, 100))
+            face_roi = preprocess_face(face_roi)
             
             # Recognize face
             try:
                 label, confidence = recognizer.predict(face_roi)
                 
                 # Adjust confidence threshold based on recognizer type
-                confidence_threshold = 70 if hasattr(recognizer, '__class__') and 'Simple' in str(recognizer.__class__) else 100
+                confidence_threshold = SIMPLE_RECOGNIZER_THRESHOLD if using_simple_recognizer else LBPH_RECOGNIZER_THRESHOLD
+                print(f"Best match label={label}, confidence={confidence}, threshold={confidence_threshold}")
                 
                 if confidence < confidence_threshold:
                     name = get_name_from_label(label)
@@ -192,30 +277,36 @@ def mark_attendance():
                         date_str = current_time.strftime('%Y-%m-%d')
                         time_str = current_time.strftime('%H:%M:%S')
                         
-                        conn = sqlite3.connect('database/attendance.db')
-                        c = conn.cursor()
-                        
-                        # Check if already marked today
-                        c.execute('''SELECT * FROM attendance 
-                                    WHERE name = ? AND date = ?''', (name, date_str))
-                        existing = c.fetchone()
-                        
-                        if not existing:
-                            c.execute('''INSERT INTO attendance (name, date, time)
-                                        VALUES (?, ?, ?)''', (name, date_str, time_str))
-                            conn.commit()
-                            recognized_names.append(name)
-                            print(f"Attendance marked for {name} with confidence {confidence}")
-                        
-                        conn.close()
+                        with closing(get_db_connection()) as conn:
+                            c = conn.cursor()
+                            
+                            # Check if already marked today
+                            c.execute('''SELECT * FROM attendance 
+                                        WHERE name = ? AND date = ?''', (name, date_str))
+                            existing = c.fetchone()
+                            
+                            if not existing:
+                                c.execute('''INSERT INTO attendance (name, date, time)
+                                            VALUES (?, ?, ?)''', (name, date_str, time_str))
+                                conn.commit()
+                                recognized_names.append(name)
+                                print(f"Attendance marked for {name} with confidence {confidence}")
+                            else:
+                                already_marked_names.append(name)
+                                print(f"{name} was recognized, but attendance is already marked for today")
+                else:
+                    name = get_name_from_label(label) or 'Unknown'
+                    print(f"Rejected match for {name}: confidence {confidence} is above threshold {confidence_threshold}")
             except Exception as e:
                 print(f"Recognition error: {e}")
                 continue
         
         if recognized_names:
             return jsonify({'success': True, 'message': f'Attendance marked for: {", ".join(recognized_names)}'})
+        elif already_marked_names:
+            return jsonify({'success': True, 'message': f'Already marked today for: {", ".join(already_marked_names)}'})
         else:
-            return jsonify({'success': False, 'message': 'No recognized faces or attendance already marked'})
+            return jsonify({'success': False, 'message': 'Face not recognized. Please register more face images with good lighting.'})
     
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
@@ -223,11 +314,10 @@ def mark_attendance():
 @app.route('/api/get_attendance')
 def get_attendance():
     try:
-        conn = sqlite3.connect('database/attendance.db')
-        c = conn.cursor()
-        c.execute('SELECT * FROM attendance ORDER BY date DESC, time DESC')
-        records = c.fetchall()
-        conn.close()
+        with closing(get_db_connection()) as conn:
+            c = conn.cursor()
+            c.execute('SELECT * FROM attendance ORDER BY date DESC, time DESC')
+            records = c.fetchall()
         
         attendance_data = []
         for record in records:
@@ -246,11 +336,10 @@ def get_attendance():
 @app.route('/api/export_csv')
 def export_csv():
     try:
-        conn = sqlite3.connect('database/attendance.db')
-        c = conn.cursor()
-        c.execute('SELECT * FROM attendance ORDER BY date DESC, time DESC')
-        records = c.fetchall()
-        conn.close()
+        with closing(get_db_connection()) as conn:
+            c = conn.cursor()
+            c.execute('SELECT * FROM attendance ORDER BY date DESC, time DESC')
+            records = c.fetchall()
         
         csv_filename = 'attendance_export.csv'
         with open(csv_filename, 'w', newline='') as csvfile:
@@ -270,8 +359,8 @@ def train_recognizer():
     current_label = 0
     
     # Collect face samples and labels
-    for person_name in os.listdir('dataset'):
-        person_dir = os.path.join('dataset', person_name)
+    for person_name in os.listdir(DATASET_FOLDER):
+        person_dir = os.path.join(DATASET_FOLDER, person_name)
         if os.path.isdir(person_dir):
             label_dict[current_label] = person_name
             for image_name in os.listdir(person_dir):
@@ -279,7 +368,7 @@ def train_recognizer():
                     image_path = os.path.join(person_dir, image_name)
                     img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
                     # Resize to standard size
-                    img = cv2.resize(img, (100, 100))
+                    img = preprocess_face(img)
                     faces.append(img)
                     labels.append(current_label)
             current_label += 1
@@ -288,13 +377,13 @@ def train_recognizer():
         try:
             recognizer.train(faces, np.array(labels))
             # Save based on recognizer type
-            if hasattr(recognizer, 'save'):
-                recognizer.save('trained_data/trainer.yml')
+            if using_simple_recognizer:
+                recognizer.save(os.path.join(TRAINED_DATA_FOLDER, 'trainer.npz'))
             else:
-                recognizer.save('trained_data/trainer.npz')
+                recognizer.save(os.path.join(TRAINED_DATA_FOLDER, 'trainer.yml'))
             
             # Save label mapping
-            with open('trained_data/labels.txt', 'w') as f:
+            with open(os.path.join(TRAINED_DATA_FOLDER, 'labels.txt'), 'w') as f:
                 for label, name in label_dict.items():
                     f.write(f'{label},{name}\n')
                     
@@ -304,7 +393,7 @@ def train_recognizer():
 
 def get_name_from_label(label):
     try:
-        with open('trained_data/labels.txt', 'r') as f:
+        with open(os.path.join(TRAINED_DATA_FOLDER, 'labels.txt'), 'r') as f:
             for line in f:
                 lbl, name = line.strip().split(',')
                 if int(lbl) == label:
@@ -314,4 +403,4 @@ def get_name_from_label(label):
     return None
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, use_reloader=False)
