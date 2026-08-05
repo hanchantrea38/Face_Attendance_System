@@ -1,9 +1,10 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file
+from flask import Flask, render_template, request, jsonify, send_file
 import cv2
 import numpy as np
 import os
 import sqlite3
 import csv
+import io
 from contextlib import closing
 from datetime import datetime
 import base64
@@ -14,8 +15,8 @@ app = Flask(__name__)
 # =========================
 # Database connection
 # =========================
-# This app connects to this SQLite database file:
-# C:\...\attendance_system\database\attendance.db
+# All data (SQLite database, face dataset, trained model, CSV exports)
+# lives in folders next to this file: database/, dataset/, trained_data/, exports/
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATABASE_FOLDER = os.path.join(BASE_DIR, 'database')
 DATABASE_NAME = 'attendance.db'
@@ -161,6 +162,11 @@ init_db()
 @app.route('/')
 def index():
     return render_template('index.html')
+
+
+@app.route('/health')
+def health():
+    return jsonify({'success': True, 'status': 'ok'})
 
 @app.route('/register')
 def register():
@@ -341,13 +347,20 @@ def export_csv():
             c.execute('SELECT * FROM attendance ORDER BY date DESC, time DESC')
             records = c.fetchall()
         
-        csv_filename = 'attendance_export.csv'
-        with open(csv_filename, 'w', newline='') as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerow(['ID', 'Name', 'Date', 'Time'])
-            writer.writerows(records)
-        
-        return send_file(csv_filename, as_attachment=True)
+        # Build the CSV in memory and send it directly - no temp file needed,
+        # so this works even on read-only or ephemeral file systems
+        csv_data = io.StringIO()
+        writer = csv.writer(csv_data)
+        writer.writerow(['ID', 'Name', 'Date', 'Time'])
+        writer.writerows(records)
+
+        export_name = f"attendance_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        return send_file(
+            io.BytesIO(csv_data.getvalue().encode('utf-8-sig')),
+            as_attachment=True,
+            download_name=export_name,
+            mimetype='text/csv'
+        )
     
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
@@ -403,4 +416,8 @@ def get_name_from_label(label):
     return None
 
 if __name__ == '__main__':
-    app.run(debug=True, use_reloader=False)
+    # Production-friendly: bind to all interfaces and use the PORT env var
+    # (required by Render, Railway, Heroku and other cloud platforms)
+    port = int(os.environ.get('PORT', 5000))
+    debug = os.environ.get('FLASK_DEBUG', '0') == '1'
+    app.run(host='0.0.0.0', port=port, debug=debug, use_reloader=False)
