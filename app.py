@@ -5,7 +5,7 @@ import os
 import sqlite3
 import csv
 import io
-from contextlib import closinghi
+from contextlib import closing
 from datetime import datetime
 import base64
 
@@ -18,6 +18,20 @@ app = Flask(__name__)
 # All data (SQLite database, face dataset, trained model, CSV exports)
 # lives in folders next to this file: database/, dataset/, trained_data/, exports/
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Serverless hosts like Vercel have a read-only file system except /tmp.
+# Copy the bundled data there so the app can still write (data in /tmp is
+# temporary and will be lost when the function restarts).
+if os.environ.get('VERCEL'):
+    import shutil
+    TMP_DIR = '/tmp/face_attendance'
+    for folder in ('database', 'dataset', 'trained_data'):
+        src = os.path.join(BASE_DIR, folder)
+        dst = os.path.join(TMP_DIR, folder)
+        if os.path.isdir(src) and not os.path.exists(dst):
+            shutil.copytree(src, dst)
+    BASE_DIR = TMP_DIR
+
 DATABASE_FOLDER = os.path.join(BASE_DIR, 'database')
 DATABASE_NAME = 'attendance.db'
 DB_PATH = os.path.join(DATABASE_FOLDER, DATABASE_NAME)
