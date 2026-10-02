@@ -1,21 +1,3 @@
-0,Sat Vichet
-1,chet
-2,Fiina
-3,Jenlis
-4,lita
-5,Moon zii
-6,CHANTREA
-7,Yella
-8,Liii
-9,Okeniiiii
-10,Rady
-11,Chantrea HAN
-12,Belly
-13,Keel
-14,Savin
-15,DeeNy
-16,Neee
-17,yui
-18,po
-19,Koi
-20,Moni
+0,lita
+1,Rady
+2,Savin

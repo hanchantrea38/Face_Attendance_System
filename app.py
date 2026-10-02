@@ -404,6 +404,9 @@ def get_attendance():
 def get_stats():
     """Summary numbers for the home page dashboard."""
     try:
+        # Pick up folders that were added or deleted by hand
+        sync_students()
+
         today = datetime.now().strftime('%Y-%m-%d')
         with closing(get_db_connection()) as conn:
             c = conn.cursor()
@@ -483,6 +486,15 @@ def train_recognizer():
                     labels.append(current_label)
             current_label += 1
     
+    if not faces:
+        # Nobody left: remove the old model so deleted people can't be recognised
+        for filename in ('trainer.yml', 'trainer.npz', 'labels.txt'):
+            path = os.path.join(TRAINED_DATA_FOLDER, filename)
+            if os.path.exists(path):
+                os.remove(path)
+        print("No faces in dataset - cleared trained model")
+        return
+
     if faces and labels:
         try:
             recognizer.train(faces, np.array(labels))
@@ -500,6 +512,47 @@ def train_recognizer():
             print(f"Trained recognizer with {len(faces)} faces from {len(label_dict)} people")
         except Exception as e:
             print(f"Training error: {e}")
+
+def sync_students():
+    """Make the students table and trained model match the dataset/ folders.
+
+    The dataset folders are the source of truth: deleting a person's folder
+    removes them, and a folder without a database row is added. The model is
+    only retrained when something actually changed.
+    """
+    folders = {}
+    for person_name in os.listdir(DATASET_FOLDER):
+        person_dir = os.path.join(DATASET_FOLDER, person_name)
+        if os.path.isdir(person_dir):
+            folders[person_name] = len([f for f in os.listdir(person_dir) if f.endswith('.jpg')])
+
+    changed = False
+    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    with closing(get_db_connection()) as conn:
+        c = conn.cursor()
+        c.execute('SELECT name FROM students')
+        in_db = {row['name'] for row in c.fetchall()}
+
+        for name in in_db - folders.keys():
+            c.execute('DELETE FROM students WHERE name = ?', (name,))
+            changed = True
+        for name in folders.keys() - in_db:
+            c.execute('''INSERT INTO students (name, image_count, created_at, updated_at)
+                         VALUES (?, ?, ?, ?)''', (name, folders[name], current_time, current_time))
+            changed = True
+        conn.commit()
+
+    # Labels in the trained model must also match the folders
+    trained_names = set()
+    try:
+        with open(os.path.join(TRAINED_DATA_FOLDER, 'labels.txt'), 'r') as f:
+            trained_names = {line.strip().split(',', 1)[1] for line in f if ',' in line}
+    except OSError:
+        pass
+
+    if changed or trained_names != set(folders):
+        train_recognizer()
+
 
 def get_name_from_label(label):
     try:

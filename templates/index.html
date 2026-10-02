@@ -158,7 +158,17 @@
     function updateHero() {
         if (!savedName) return;
         const me = students.find(s => s.name.toLowerCase() === savedName.toLowerCase());
-        if (me && me.present) {
+        if (!me) {
+            // This person was deleted: forget them on this device too
+            try { localStorage.removeItem('registeredName'); } catch (e) {}
+            savedName = null;
+            document.getElementById('greeting').textContent = `${greetingWord()} 👋`;
+            document.getElementById('heroSecondary').href = '/register';
+            document.getElementById('heroSecondary').textContent = 'Register Face';
+            document.querySelectorAll('[data-register-link]').forEach(a => a.href = '/register');
+            return;
+        }
+        if (me.present) {
             document.getElementById('heroTitle').textContent = "You're checked in for today ✓";
             document.getElementById('heroText').textContent = `Marked present at ${shortTime(me.time)}. See you tomorrow!`;
             document.getElementById('heroAction').href = '/view_records';
