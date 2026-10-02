@@ -5,7 +5,7 @@ import os
 import sqlite3
 import csv
 import io
-from contextlib import closing
+from contextlib import closinghi
 from datetime import datetime
 import base64
 
