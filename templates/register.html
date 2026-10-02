@@ -1,199 +1,177 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Register Face - Attendance System</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-gray-100 min-h-screen">
-    <div class="container mx-auto px-4 py-8">
-        <!-- Header -->
-        <header class="text-center mb-8">
-            <h1 class="text-3xl font-bold text-blue-600 mb-2">Register New Face</h1>
-            <p class="text-gray-600">Capture images to register faces for attendance tracking</p>
-            <a href="/" class="inline-block mt-4 text-white-500 hover:text-black-700 bg-blue-500 rounded-lg w-40 h-8 text-lg">← Back to Home</a>
-        </header>
+{% extends "base.html" %}
+{% set active_page = 'register' %}
+{% block title %}Register · Face Attendance{% endblock %}
 
-        <div class="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-6">
-            <!-- Camera Section -->
-            <div class="mb-6">
-                <div class="bg-gray-800 rounded-lg overflow-hidden mb-4">
-                    <video id="video" width="640" height="480" autoplay class="w-full"></video>
+{% block content %}
+    <header class="fade-up">
+        <h1 class="text-2xl md:text-3xl font-extrabold tracking-tight">Register Your Face</h1>
+        <p class="text-slate-500 mt-1">Enter your name, look at the camera, and press <span class="font-semibold text-slate-700">Capture &amp; Register</span>.</p>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        <!-- Camera -->
+        <section class="lg:col-span-3 bg-white rounded-2xl border border-slate-200 p-4 md:p-5 fade-up">
+            <div class="relative aspect-[4/3] bg-slate-900 rounded-xl overflow-hidden">
+                <video id="video" autoplay playsinline muted class="mirror absolute inset-0 w-full h-full object-cover"></video>
+                <!-- Frozen snapshot shown while registering -->
+                <img id="snapshot" class="mirror hidden absolute inset-0 w-full h-full object-cover" alt="Captured face">
+
+                <!-- Face guide -->
+                <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div class="face-guide"></div>
                 </div>
-                <div class="flex justify-center space-x-4">
-                    <button id="captureBtn" disabled class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                        Capture Image
-                    </button>
-                    <button id="startCamera" class="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-lg font-semibold transition-colors">
-                        Start Camera
-                    </button>
+
+                <div id="scanner" class="hidden absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-indigo-400 to-transparent shadow-[0_0_20px_4px_rgba(129,140,248,0.7)] scan-line"></div>
+
+                <!-- Camera status pill -->
+                <div class="absolute top-3 left-3 flex items-center gap-2 bg-black/50 backdrop-blur text-white text-xs font-medium px-3 py-1.5 rounded-full">
+                    <span id="camDot" class="w-2 h-2 rounded-full bg-amber-400"></span>
+                    <span id="camText">Starting camera...</span>
                 </div>
-            </div>
 
-            <!-- Name Input -->
-            <div class="mb-6">
-                <label for="name" class="block text-sm font-medium text-gray-700 mb-2">Enter Name</label>
-                <input type="text" id="name" placeholder="Enter person's name" 
-                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-            </div>
-
-            <!-- Preview Section -->
-            <div class="mb-6">
-                <h3 class="text-lg font-semibold text-gray-800 mb-3">Captured Images</h3>
-                <div id="previewContainer" class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <!-- Preview images will appear here -->
+                <!-- Camera blocked -->
+                <div id="camBlocked" class="hidden absolute inset-0 flex flex-col items-center justify-center text-center text-white p-6 bg-slate-900">
+                    <p class="font-semibold text-lg">Camera not available</p>
+                    <p id="camBlockedText" class="text-slate-300 text-sm mt-1 max-w-xs"></p>
+                    <button id="startCamera" class="mt-4 bg-white text-slate-900 font-semibold px-5 py-2.5 rounded-xl hover:bg-slate-100">Try Again</button>
                 </div>
             </div>
+        </section>
 
-            <!-- Register Button -->
-            <div class="text-center">
-                <button id="registerBtn" disabled class="bg-purple-500 hover:bg-purple-600 text-white px-8 py-3 rounded-lg font-semibold text-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                    Register Face
-                </button>
+        <!-- Form -->
+        <section class="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-5 md:p-6 fade-up flex flex-col">
+            <label for="name" class="block text-sm font-semibold text-slate-700 mb-2">Your full name</label>
+            <input type="text" id="name" placeholder="e.g. Chantrea HAN" autocomplete="name" autofocus
+                   class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white">
+            <p class="text-xs text-slate-500 mt-2">Use the same name each time. Registering again with the same name adds more photos and improves recognition.</p>
+
+            <div class="mt-6 rounded-xl bg-slate-50 border border-slate-100 p-4">
+                <p class="text-sm font-semibold text-slate-700 mb-3">For the best result</p>
+                <ul class="space-y-2.5 text-sm text-slate-600">
+                    <li class="flex gap-2.5"><span class="text-emerald-500 font-bold">✓</span> Keep your face inside the oval</li>
+                    <li class="flex gap-2.5"><span class="text-emerald-500 font-bold">✓</span> Face a light source, not a window behind you</li>
+                    <li class="flex gap-2.5"><span class="text-emerald-500 font-bold">✓</span> Remove sunglasses or a mask</li>
+                    <li class="flex gap-2.5"><span class="text-emerald-500 font-bold">✓</span> Only one person in the picture</li>
+                </ul>
             </div>
 
-            <!-- Status Message -->
-            <div id="statusMessage" class="mt-4 text-center hidden"></div>
-        </div>
+            <!-- Inline error -->
+            <div id="errorBox" class="hidden mt-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm p-3"></div>
+
+            <button id="captureBtn" disabled class="mt-6 lg:mt-auto w-full inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-6 py-3.5 rounded-xl shadow-md shadow-indigo-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z"/>
+                </svg>
+                <span id="captureText">Capture &amp; Register</span>
+            </button>
+        </section>
     </div>
+{% endblock %}
 
-    <script>
-        const video = document.getElementById('video');
-        const captureBtn = document.getElementById('captureBtn');
-        const startCameraBtn = document.getElementById('startCamera');
-        const registerBtn = document.getElementById('registerBtn');
-        const previewContainer = document.getElementById('previewContainer');
-        const statusMessage = document.getElementById('statusMessage');
-        const nameInput = document.getElementById('name');
+{% block scripts %}
+<script>
+    // Already registered on this device? Go straight to the home page.
+    // (/register?new=1 skips this so someone else can register.)
+    if (savedName && !new URLSearchParams(location.search).has('new')) {
+        location.replace('/');
+    }
 
-        let stream = null;
-        const capturedImages = [];
+    const video = document.getElementById('video');
+    const snapshot = document.getElementById('snapshot');
+    const captureBtn = document.getElementById('captureBtn');
+    const captureText = document.getElementById('captureText');
+    const nameInput = document.getElementById('name');
+    const errorBox = document.getElementById('errorBox');
+    const scanner = document.getElementById('scanner');
+    let stream = null;
 
-        // Start camera
-        startCameraBtn.addEventListener('click', async () => {
-            try {
-                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
-                video.srcObject = stream;
-                captureBtn.disabled = false;
-                showStatus('Camera started successfully!', 'success');
-            } catch (err) {
-                showStatus('Error accessing camera: ' + err.message, 'error');
-            }
-        });
+    function setCamStatus(text, color) {
+        document.getElementById('camText').textContent = text;
+        document.getElementById('camDot').className = 'w-2 h-2 rounded-full ' + color;
+    }
+    function showError(message) {
+        errorBox.textContent = message;
+        errorBox.classList.remove('hidden');
+    }
 
-        // Capture image
-        captureBtn.addEventListener('click', () => {
-            if (!nameInput.value.trim()) {
-                showStatus('Please enter a name first', 'error');
-                return;
-            }
-
-            if (!stream || video.videoWidth === 0 || video.videoHeight === 0) {
-                showStatus('Please start the camera first', 'error');
-                return;
-            }
-
-            const canvas = document.createElement('canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const context = canvas.getContext('2d');
-            context.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
-            const imageData = canvas.toDataURL('image/jpeg');
-            capturedImages.push(imageData);
-            
-            // Create preview
-            const preview = document.createElement('div');
-            preview.className = 'relative';
-            preview.innerHTML = `
-                <img src="${imageData}" class="w-full h-32 object-cover rounded-lg">
-                <button class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 text-xs" onclick="removeImage(${capturedImages.length - 1})">×</button>
-            `;
-            previewContainer.appendChild(preview);
-            registerBtn.disabled = false;
-            
-            showStatus('Image captured successfully!', 'success');
-        });
-
-        // Register face
-        registerBtn.addEventListener('click', async () => {
-            if (!nameInput.value.trim()) {
-                showStatus('Please enter a name', 'error');
-                return;
-            }
-
-            if (capturedImages.length === 0) {
-                showStatus('Please capture at least one image', 'error');
-                return;
-            }
-
-            registerBtn.disabled = true;
-            registerBtn.textContent = 'Registering...';
-
-            try {
-                // Send all captured images
-                for (const imageData of capturedImages) {
-                    const formData = new FormData();
-                    formData.append('name', nameInput.value);
-                    formData.append('image', imageData);
-
-                    const response = await fetch('/api/register_face', {
-                        method: 'POST',
-                        body: formData
-                    });
-
-                    const result = await response.json();
-                    
-                    if (!result.success) {
-                        showStatus('Error: ' + result.message, 'error');
-                        registerBtn.disabled = false;
-                        registerBtn.textContent = 'Register Face';
-                        return;
-                    }
-                }
-
-                showStatus('Face registered successfully!', 'success');
-                capturedImages.length = 0;
-                previewContainer.innerHTML = '';
-                nameInput.value = '';
-                registerBtn.disabled = true;
-                
-            } catch (error) {
-                showStatus('Error: ' + error.message, 'error');
-            } finally {
-                registerBtn.disabled = false;
-                registerBtn.textContent = 'Register Face';
-            }
-        });
-
-        // Remove image from preview
-        window.removeImage = (index) => {
-            capturedImages.splice(index, 1);
-            previewContainer.innerHTML = '';
-            capturedImages.forEach((img, idx) => {
-                const preview = document.createElement('div');
-                preview.className = 'relative';
-                preview.innerHTML = `
-                    <img src="${img}" class="w-full h-32 object-cover rounded-lg">
-                    <button class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 text-xs" onclick="removeImage(${idx})">×</button>
-                `;
-                previewContainer.appendChild(preview);
-            });
-            registerBtn.disabled = capturedImages.length === 0;
-        };
-
-        // Show status message
-        function showStatus(message, type) {
-            statusMessage.textContent = message;
-            statusMessage.className = 'mt-4 text-center p-3 rounded-lg ' + 
-                (type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700');
-            statusMessage.classList.remove('hidden');
-            
-            setTimeout(() => {
-                statusMessage.classList.add('hidden');
-            }, 5000);
+    // Start camera
+    async function startCamera() {
+        if (stream) return;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+            video.srcObject = stream;
+            document.getElementById('camBlocked').classList.add('hidden');
+            captureBtn.disabled = false;
+            setCamStatus('Camera ready', 'bg-emerald-400');
+        } catch (err) {
+            document.getElementById('camBlockedText').textContent = 'Please allow camera access in your browser. (' + err.message + ')';
+            document.getElementById('camBlocked').classList.remove('hidden');
+            setCamStatus('No camera', 'bg-rose-400');
         }
-    </script>
-</body>
-</html>
+    }
+    document.getElementById('startCamera').addEventListener('click', startCamera);
+    startCamera();
+
+    // Capture one image, register it, then go back to the home page
+    captureBtn.addEventListener('click', async () => {
+        errorBox.classList.add('hidden');
+        const name = nameInput.value.trim();
+        if (!name) {
+            showError('Please enter your name first.');
+            nameInput.focus();
+            return;
+        }
+        if (!stream || video.videoWidth === 0 || video.videoHeight === 0) {
+            showError('Please allow the camera first.');
+            return;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageData = canvas.toDataURL('image/jpeg');
+
+        // Freeze the picture so the user sees what was captured
+        snapshot.src = imageData;
+        snapshot.classList.remove('hidden');
+        scanner.classList.remove('hidden');
+        captureBtn.disabled = true;
+        nameInput.disabled = true;
+        captureText.textContent = 'Registering...';
+        setCamStatus('Saving your face...', 'bg-indigo-400');
+
+        try {
+            const formData = new FormData();
+            formData.append('name', name);
+            formData.append('image', imageData);
+
+            const response = await fetch('/api/register_face', { method: 'POST', body: formData });
+            const data = await response.json();
+            if (!data.success) throw new Error(data.message);
+
+            // Success: remember it and go straight to the home page
+            try { localStorage.setItem('registeredName', name); } catch (e) {}
+            captureText.textContent = 'Registered ✓';
+            stream.getTracks().forEach(track => track.stop());
+            location.replace('/?registered=' + encodeURIComponent(name));
+
+        } catch (error) {
+            // Stay on the page so the user can try again (e.g. no face detected)
+            showError(error.message + '. Please try again.');
+            snapshot.classList.add('hidden');
+            scanner.classList.add('hidden');
+            captureBtn.disabled = false;
+            nameInput.disabled = false;
+            captureText.textContent = 'Capture & Register';
+            setCamStatus('Camera ready', 'bg-emerald-400');
+        }
+    });
+
+    // Press Enter in the name box to capture
+    nameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !captureBtn.disabled) captureBtn.click();
+    });
+</script>
+{% endblock %}

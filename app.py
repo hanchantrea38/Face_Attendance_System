@@ -9,6 +9,8 @@ from datetime import datetime
 import base64
 
 app = Flask(__name__)
+# Pick up edits to the HTML templates without restarting the server
+app.config['TEMPLATES_AUTO_RELOAD'] = True
 
 # Anything that fails while the app starts is stored here instead of crashing
 # the whole server, so the pages still load and /health shows the real error.
@@ -203,6 +205,13 @@ def startup_error_response():
         return jsonify({'success': False, 'message': 'Server setup error: ' + '; '.join(STARTUP_ERRORS)})
     return None
 
+@app.after_request
+def no_cache_html(response):
+    # Always send the latest version of the pages, never an old browser copy
+    if response.mimetype == 'text/html':
+        response.headers['Cache-Control'] = 'no-store'
+    return response
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -388,6 +397,42 @@ def get_attendance():
         
         return jsonify({'success': True, 'data': attendance_data})
     
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/stats')
+def get_stats():
+    """Summary numbers for the home page dashboard."""
+    try:
+        today = datetime.now().strftime('%Y-%m-%d')
+        with closing(get_db_connection()) as conn:
+            c = conn.cursor()
+            c.execute('SELECT name, image_count FROM students ORDER BY name COLLATE NOCASE')
+            students = c.fetchall()
+            c.execute('SELECT name, time FROM attendance WHERE date = ?', (today,))
+            present_today = {row['name']: row['time'] for row in c.fetchall()}
+            c.execute('SELECT COUNT(*) FROM attendance')
+            total_records = c.fetchone()[0]
+            c.execute('SELECT name, date, time FROM attendance ORDER BY date DESC, time DESC LIMIT 5')
+            recent = [dict(row) for row in c.fetchall()]
+
+        student_list = [{
+            'name': s['name'],
+            'image_count': s['image_count'],
+            'present': s['name'] in present_today,
+            'time': present_today.get(s['name'])
+        } for s in students]
+
+        return jsonify({
+            'success': True,
+            'today': today,
+            'registered': len(student_list),
+            'present_today': sum(1 for s in student_list if s['present']),
+            'total_records': total_records,
+            'students': student_list,
+            'recent': recent
+        })
+
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 

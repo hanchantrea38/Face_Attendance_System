@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Face Attendance{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } } };
+    </script>
+    <style>
+        .scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scroll-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+        .fade-up { animation: fadeUp 0.4s ease both; }
+        /* Oval face guide on camera views */
+        .face-guide { border: 3px dashed rgba(255,255,255,0.7); border-radius: 50%; width: 42%; aspect-ratio: 3 / 4; }
+        @keyframes scan { 0% { top: 8%; } 50% { top: 88%; } 100% { top: 8%; } }
+        .scan-line { animation: scan 1.6s ease-in-out infinite; }
+        video.mirror, img.mirror { transform: scaleX(-1); }
+    </style>
+    {% block head %}{% endblock %}
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen antialiased">
+    {% set nav_items = [
+        ('index', '/', 'Dashboard'),
+        ('attendance', '/attendance', 'Check In'),
+        ('records', '/view_records', 'Records'),
+        ('register', '/register', 'Register')
+    ] %}
+
+    <!-- Top navigation -->
+    <nav class="sticky top-0 z-20 bg-white/80 backdrop-blur border-b border-slate-200">
+        <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+            <a href="/" class="flex items-center gap-2.5">
+                <span class="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-sm">
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.5 20.1a7.5 7.5 0 0115 0"/>
+                    </svg>
+                </span>
+                <span class="font-bold text-lg tracking-tight">Face Attendance</span>
+            </a>
+            <div class="hidden md:flex items-center gap-1 text-sm font-medium">
+                {% for key, href, label in nav_items %}
+                <a href="{{ href }}" {% if key == 'register' %}data-register-link{% endif %}
+                   class="px-3 py-2 rounded-lg {{ 'bg-slate-100 text-slate-900' if active_page == key else 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' }}">{{ label }}</a>
+                {% endfor %}
+            </div>
+            <div class="text-right leading-tight">
+                <p id="clock" class="font-semibold tabular-nums"></p>
+                <p id="dateLabel" class="text-xs text-slate-500"></p>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-6xl mx-auto px-4 py-6 md:py-8 flex flex-col gap-6">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Mobile bottom navigation -->
+    <nav class="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 grid grid-cols-4 text-xs font-medium z-20">
+        {% for key, href, label in nav_items %}
+        <a href="{{ href }}" {% if key == 'register' %}data-register-link{% endif %}
+           class="py-3 text-center {{ 'text-indigo-600' if active_page == key else 'text-slate-600' }}">{{ label }}</a>
+        {% endfor %}
+    </nav>
+    <div class="h-14 md:hidden"></div>
+
+    <!-- Toast notifications -->
+    <div id="toast" class="hidden fixed z-30 left-1/2 -translate-x-1/2 bottom-20 md:bottom-8 px-4 py-3 rounded-xl shadow-lg text-sm font-medium max-w-[90vw]"></div>
+
+    <script>
+        // ---- Shared helpers used by every page ----
+
+        // Escape text before putting it into HTML
+        function esc(text) {
+            const div = document.createElement('div');
+            div.textContent = text ?? '';
+            return div.innerHTML;
+        }
+
+        // Same name always gets the same avatar color
+        const AVATAR_COLORS = [
+            'bg-blue-100 text-blue-700', 'bg-emerald-100 text-emerald-700', 'bg-amber-100 text-amber-700',
+            'bg-rose-100 text-rose-700', 'bg-violet-100 text-violet-700', 'bg-cyan-100 text-cyan-700',
+            'bg-orange-100 text-orange-700', 'bg-pink-100 text-pink-700'
+        ];
+        function avatarColor(name) {
+            let hash = 0;
+            for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+            return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+        }
+        function initials(name) {
+            const parts = name.trim().split(/\s+/);
+            return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase();
+        }
+        function avatar(name, size = 'w-10 h-10 text-sm') {
+            return `<div class="${size} shrink-0 rounded-full ${avatarColor(name)} flex items-center justify-center font-semibold">${esc(initials(name))}</div>`;
+        }
+
+        // "5 min ago" style times
+        function timeAgo(date, time) {
+            const then = new Date(`${date}T${time}`);
+            const mins = Math.floor((Date.now() - then) / 60000);
+            if (isNaN(mins)) return `${date} ${time}`;
+            if (mins < 1) return 'Just now';
+            if (mins < 60) return `${mins} min ago`;
+            if (mins < 24 * 60) return `${Math.floor(mins / 60)} hr ago`;
+            const days = Math.floor(mins / 1440);
+            if (days === 1) return 'Yesterday';
+            if (days < 7) return `${days} days ago`;
+            return then.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        }
+        function shortTime(time) {
+            return time ? time.slice(0, 5) : '';
+        }
+        function todayISO() {
+            const d = new Date();
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+
+        // Small popup message at the bottom of the screen
+        function toast(message, type = 'info') {
+            const colors = {
+                success: 'bg-emerald-600 text-white',
+                error: 'bg-rose-600 text-white',
+                info: 'bg-slate-900 text-white'
+            };
+            const el = document.getElementById('toast');
+            el.textContent = message;
+            el.className = 'fade-up fixed z-30 left-1/2 -translate-x-1/2 bottom-20 md:bottom-8 px-4 py-3 rounded-xl shadow-lg text-sm font-medium max-w-[90vw] ' + colors[type];
+            clearTimeout(toast.timer);
+            toast.timer = setTimeout(() => el.classList.add('hidden'), 4000);
+        }
+
+        // Who registered on this device
+        let savedName = null;
+        try { savedName = localStorage.getItem('registeredName'); } catch (e) {}
+        if (savedName) {
+            document.querySelectorAll('[data-register-link]').forEach(a => a.href = '/register?new=1');
+        }
+
+        // Live clock in the nav bar
+        function tick() {
+            const now = new Date();
+            document.getElementById('clock').textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            document.getElementById('dateLabel').textContent = now.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+        }
+        tick();
+        setInterval(tick, 10000);
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

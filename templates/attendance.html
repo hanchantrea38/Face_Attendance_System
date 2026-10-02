@@ -1,147 +1,206 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mark Attendance - Attendance System</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-gray-100 min-h-screen">
-    <div class="container mx-auto px-4 py-8">
-        <!-- Header -->
-        <header class="text-center mb-8">
-            <h1 class="text-3xl font-bold text-green-600 mb-2">Mark Attendance</h1>
-            <p class="text-gray-600">Capture your face to automatically mark attendance</p>
-            <a href="/" class="inline-block mt-4 text-white-500 hover:text-black-700 bg-blue-500 rounded-lg w-40 h-8 text-lg">← Back to Home</a>
-        </header>
-        <div class="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-6">
-            <!-- Camera Section -->
-            <div class="mb-6">
-                <div class="bg-gray-800 rounded-lg overflow-hidden mb-4">
-                    <video id="video" width="640" height="480" autoplay class="w-full"></video>
+{% extends "base.html" %}
+{% set active_page = 'attendance' %}
+{% block title %}Check In · Face Attendance{% endblock %}
+
+{% block content %}
+    <header class="fade-up">
+        <h1 class="text-2xl md:text-3xl font-extrabold tracking-tight">Check In</h1>
+        <p class="text-slate-500 mt-1">Look at the camera and press <span class="font-semibold text-slate-700">Check In</span>. It only takes a second.</p>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        <!-- Camera -->
+        <section class="lg:col-span-3 bg-white rounded-2xl border border-slate-200 p-4 md:p-5 fade-up">
+            <div class="relative aspect-[4/3] bg-slate-900 rounded-xl overflow-hidden">
+                <video id="video" autoplay playsinline muted class="mirror absolute inset-0 w-full h-full object-cover"></video>
+
+                <!-- Face guide -->
+                <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div class="face-guide"></div>
                 </div>
-                <div class="flex justify-center space-x-4">
-                    <button id="markAttendanceBtn" class="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-semibold text-lg transition-colors">
-                        Mark Attendance
-                    </button>
-                    <button id="startCamera" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors">
-                        Start Camera
-                    </button>
+
+                <!-- Scanning line while processing -->
+                <div id="scanner" class="hidden absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-indigo-400 to-transparent shadow-[0_0_20px_4px_rgba(129,140,248,0.7)] scan-line"></div>
+
+                <!-- Camera status pill -->
+                <div id="camStatus" class="absolute top-3 left-3 flex items-center gap-2 bg-black/50 backdrop-blur text-white text-xs font-medium px-3 py-1.5 rounded-full">
+                    <span id="camDot" class="w-2 h-2 rounded-full bg-amber-400"></span>
+                    <span id="camText">Starting camera...</span>
+                </div>
+
+                <!-- Camera blocked -->
+                <div id="camBlocked" class="hidden absolute inset-0 flex flex-col items-center justify-center text-center text-white p-6 bg-slate-900">
+                    <p class="font-semibold text-lg">Camera not available</p>
+                    <p id="camBlockedText" class="text-slate-300 text-sm mt-1 max-w-xs"></p>
+                    <button id="startCamera" class="mt-4 bg-white text-slate-900 font-semibold px-5 py-2.5 rounded-xl hover:bg-slate-100">Try Again</button>
+                </div>
+
+                <!-- Result overlay -->
+                <div id="result" class="hidden absolute inset-0 flex flex-col items-center justify-center text-center p-6 backdrop-blur-sm">
+                    <div id="resultIcon" class="w-16 h-16 rounded-full flex items-center justify-center text-3xl text-white mb-3"></div>
+                    <p id="resultTitle" class="text-2xl font-extrabold text-white"></p>
+                    <p id="resultText" class="text-white/90 mt-1 max-w-sm"></p>
                 </div>
             </div>
 
-            <!-- Status Message -->
-            <div id="statusMessage" class="mt-4 text-center hidden"></div>
-
-            <!-- Recent Attendance -->
-            <div class="mt-8">
-                <h3 class="text-xl font-semibold text-gray-800 mb-4">Recent Attendance</h3>
-                <div id="recentAttendance" class="bg-gray-50 rounded-lg p-4">
-                    <!-- Recent records will be loaded here -->
-                </div>
+            <div class="mt-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <p class="text-sm text-slate-500 order-2 sm:order-1">Tip: face the light and keep your face inside the oval.</p>
+                <button id="checkInBtn" disabled class="order-1 sm:order-2 w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-8 py-3 rounded-xl shadow-md shadow-indigo-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    <span id="checkInText">Check In</span>
+                </button>
             </div>
-        </div>
+        </section>
+
+        <!-- Today's check-ins -->
+        <section class="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-5 fade-up flex flex-col">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-lg font-bold">Today's Check-ins</h2>
+                <span id="todayCount" class="text-xs font-semibold bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 px-2.5 py-1 rounded-full">0</span>
+            </div>
+            <div id="todayList" class="scroll-thin overflow-y-auto max-h-[26rem] space-y-1 -mx-2">
+                <p class="text-slate-400 text-center py-10">Loading...</p>
+            </div>
+            <a href="/view_records" class="mt-auto pt-4 text-sm font-medium text-indigo-600 hover:text-indigo-800 text-center">View all records →</a>
+        </section>
     </div>
+{% endblock %}
 
-    <script>
-        const video = document.getElementById('video');
-        const markAttendanceBtn = document.getElementById('markAttendanceBtn');
-        const startCameraBtn = document.getElementById('startCamera');
-        const statusMessage = document.getElementById('statusMessage');
-        const recentAttendance = document.getElementById('recentAttendance');
+{% block scripts %}
+<script>
+    const video = document.getElementById('video');
+    const checkInBtn = document.getElementById('checkInBtn');
+    const checkInText = document.getElementById('checkInText');
+    const scanner = document.getElementById('scanner');
+    const result = document.getElementById('result');
+    const todayList = document.getElementById('todayList');
+    let stream = null;
+    let busy = false;
 
-        let stream = null;
+    function setCamStatus(text, color) {
+        document.getElementById('camText').textContent = text;
+        document.getElementById('camDot').className = 'w-2 h-2 rounded-full ' + color;
+    }
 
-        // Start camera
-        startCameraBtn.addEventListener('click', async () => {
-            try {
-                stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                video.srcObject = stream;
-                markAttendanceBtn.disabled = false;
-                showStatus('Camera started successfully!', 'success');
-            } catch (err) {
-                showStatus('Error accessing camera: ' + err.message, 'error');
+    // Start camera
+    async function startCamera() {
+        if (stream) return;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+            video.srcObject = stream;
+            document.getElementById('camBlocked').classList.add('hidden');
+            checkInBtn.disabled = false;
+            setCamStatus('Camera ready', 'bg-emerald-400');
+        } catch (err) {
+            document.getElementById('camBlockedText').textContent = 'Please allow camera access in your browser. (' + err.message + ')';
+            document.getElementById('camBlocked').classList.remove('hidden');
+            setCamStatus('No camera', 'bg-rose-400');
+        }
+    }
+    document.getElementById('startCamera').addEventListener('click', startCamera);
+    startCamera();
+
+    function showResult(type, title, text) {
+        const styles = {
+            success: ['bg-emerald-600/80', 'bg-emerald-500', '✓'],
+            info: ['bg-indigo-600/80', 'bg-indigo-500', '✓'],
+            error: ['bg-rose-600/80', 'bg-rose-500', '!']
+        }[type];
+        result.className = 'absolute inset-0 flex flex-col items-center justify-center text-center p-6 backdrop-blur-sm fade-up ' + styles[0];
+        document.getElementById('resultIcon').className = 'w-16 h-16 rounded-full flex items-center justify-center text-3xl text-white mb-3 ring-4 ring-white/40 ' + styles[1];
+        document.getElementById('resultIcon').textContent = styles[2];
+        document.getElementById('resultTitle').textContent = title;
+        document.getElementById('resultText').textContent = text;
+        clearTimeout(showResult.timer);
+        showResult.timer = setTimeout(() => result.classList.add('hidden'), 4000);
+    }
+
+    // Check in
+    async function checkIn() {
+        if (busy) return;
+        if (!stream || video.videoWidth === 0) {
+            toast('Please allow the camera first', 'error');
+            return;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageData = canvas.toDataURL('image/jpeg');
+
+        busy = true;
+        checkInBtn.disabled = true;
+        checkInText.textContent = 'Scanning...';
+        result.classList.add('hidden');
+        scanner.classList.remove('hidden');
+        setCamStatus('Recognising...', 'bg-indigo-400');
+
+        try {
+            const formData = new FormData();
+            formData.append('image', imageData);
+            const response = await fetch('/api/mark_attendance', { method: 'POST', body: formData });
+            const data = await response.json();
+
+            // Messages look like "Attendance marked for: Name" / "Already marked today for: Name"
+            const names = data.message.includes(': ') ? data.message.split(': ').slice(1).join(': ') : '';
+            if (data.success && data.message.startsWith('Already')) {
+                showResult('info', `Hi ${names}!`, "You're already checked in for today.");
+            } else if (data.success) {
+                showResult('success', `Welcome, ${names}!`, `Checked in at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+                loadToday();
+            } else {
+                showResult('error', 'Not recognised', data.message);
             }
-        });
+        } catch (error) {
+            showResult('error', 'Something went wrong', error.message);
+        } finally {
+            busy = false;
+            scanner.classList.add('hidden');
+            checkInBtn.disabled = false;
+            checkInText.textContent = 'Check In';
+            setCamStatus('Camera ready', 'bg-emerald-400');
+        }
+    }
+    checkInBtn.addEventListener('click', checkIn);
+    // Space bar also checks in
+    document.addEventListener('keydown', (e) => {
+        if (e.code === 'Space' && e.target === document.body) {
+            e.preventDefault();
+            checkIn();
+        }
+    });
 
-        // Mark attendance
-        markAttendanceBtn.addEventListener('click', async () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const context = canvas.getContext('2d');
-            context.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
-            const imageData = canvas.toDataURL('image/jpeg');
+    // Today's check-ins list
+    async function loadToday() {
+        try {
+            const response = await fetch('/api/get_attendance');
+            const data = await response.json();
+            const today = todayISO();
+            const records = data.success ? data.data.filter(r => r.date === today) : [];
+            document.getElementById('todayCount').textContent = records.length;
 
-            markAttendanceBtn.disabled = true;
-            markAttendanceBtn.textContent = 'Processing...';
-
-            try {
-                const formData = new FormData();
-                formData.append('image', imageData);
-
-                const response = await fetch('/api/mark_attendance', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                const result = await response.json();
-                
-                if (result.success) {
-                    showStatus(result.message, 'success');
-                    loadRecentAttendance();
-                } else {
-                    showStatus(result.message, 'error');
-                }
-                
-            } catch (error) {
-                showStatus('Error: ' + error.message, 'error');
-            } finally {
-                markAttendanceBtn.disabled = false;
-                markAttendanceBtn.textContent = 'Mark Attendance';
+            if (records.length === 0) {
+                todayList.innerHTML = '<p class="text-slate-400 text-center py-10">No one has checked in yet today.<br>Be the first! 🌟</p>';
+                return;
             }
-        });
-
-        // Load recent attendance
-        async function loadRecentAttendance() {
-            try {
-                const response = await fetch('/api/get_attendance');
-                const result = await response.json();
-                
-                if (result.success && result.data.length > 0) {
-                    const recent = result.data.slice(0, 5);
-                    recentAttendance.innerHTML = recent.map(record => `
-                        <div class="flex justify-between items-center py-2 border-b border-gray-200">
-                            <div>
-                                <span class="font-semibold">${record.name}</span>
-                                <span class="text-sm text-gray-500 ml-2">${record.date} ${record.time}</span>
-                            </div>
-                            <span class="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">Present</span>
+            todayList.innerHTML = records.map(r => `
+                <div class="flex items-center justify-between gap-3 px-2 py-2.5 rounded-xl hover:bg-slate-50">
+                    <div class="flex items-center gap-3 min-w-0">
+                        ${avatar(r.name)}
+                        <div class="min-w-0">
+                            <p class="font-semibold truncate">${esc(r.name)}</p>
+                            <p class="text-xs text-slate-500">${esc(timeAgo(r.date, r.time))}</p>
                         </div>
-                    `).join('');
-                } else {
-                    recentAttendance.innerHTML = '<p class="text-gray-500 text-center">No attendance records found</p>';
-                }
-            } catch (error) {
-                recentAttendance.innerHTML = '<p class="text-red-500 text-center">Error loading records</p>';
-            }
+                    </div>
+                    <span class="text-sm font-medium text-slate-600 tabular-nums">${esc(shortTime(r.time))}</span>
+                </div>
+            `).join('');
+        } catch (error) {
+            todayList.innerHTML = '<p class="text-rose-500 text-center py-10">Could not load check-ins</p>';
         }
-
-        // Show status message
-        function showStatus(message, type) {
-            statusMessage.textContent = message;
-            statusMessage.className = 'mt-4 text-center p-3 rounded-lg ' + 
-                (type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700');
-            statusMessage.classList.remove('hidden');
-            
-            setTimeout(() => {
-                statusMessage.classList.add('hidden');
-            }, 5000);
-        }
-
-        // Load recent attendance on page load
-        loadRecentAttendance();
-    </script>
-</body>
-</html>
+    }
+    loadToday();
+    setInterval(loadToday, 30000);
+</script>
+{% endblock %}

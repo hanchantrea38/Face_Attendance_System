@@ -1,179 +1,218 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>View Records - Attendance System</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-gray-100 min-h-screen">
-    <div class="container mx-auto px-4 py-8">
-        <!-- Header -->
-        <header class="text-center mb-8">
-            <h1 class="text-3xl font-bold text-purple-600 mb-2">Attendance Records</h1>
-            <p class="text-gray-600">View and manage all attendance records</p>
-            <div class="mt-4 space-x-4">
-                <a href="/" class="inline-block mt-4 text-white-500 hover:text-black-700 bg-blue-500 rounded-lg w-40 h-8 text-lg">← Back to Home</a>
-                <a href="/api/export_csv" class="inline-block bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-semibold transition-colors">
-                    Export CSV
-                </a>
-            </div>
-        </header>
+{% extends "base.html" %}
+{% set active_page = 'records' %}
+{% block title %}Records · Face Attendance{% endblock %}
 
-        <div class="max-w-6xl mx-auto bg-white rounded-lg shadow-md p-6">
-            <!-- Filters -->
-            <div class="mb-6 flex flex-wrap gap-4">
-                <input type="text" id="searchInput" placeholder="Search by name..." 
-                       class="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500">
-                <input type="date" id="dateFilter" 
-                       class="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500">
-                <button id="clearFilters" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md transition-colors">
-                    Clear Filters
-                </button>
-            </div>
+{% block content %}
+    <header class="fade-up flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div>
+            <h1 class="text-2xl md:text-3xl font-extrabold tracking-tight">Attendance Records</h1>
+            <p class="text-slate-500 mt-1">Search, filter and export every check-in.</p>
+        </div>
+        <a href="/api/export_csv" class="inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold px-5 py-2.5 rounded-xl transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+            Export CSV
+        </a>
+    </header>
 
-            <!-- Records Table -->
-            <div class="overflow-x-auto">
-                <table class="w-full border-collapse border border-gray-300">
-                    <thead>
-                        <tr class="bg-gray-50">
-                            <th class="border border-gray-300 px-4 py-2 text-left">ID</th>
-                            <th class="border border-gray-300 px-4 py-2 text-left">Name</th>
-                            <th class="border border-gray-300 px-4 py-2 text-left">Date</th>
-                            <th class="border border-gray-300 px-4 py-2 text-left">Time</th>
-                            <th class="border border-gray-300 px-4 py-2 text-left">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody id="recordsTable">
-                        <!-- Records will be loaded here -->
-                    </tbody>
-                </table>
-            </div>
+    <!-- Summary -->
+    <section class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="fade-up bg-white rounded-2xl border border-slate-200 p-5">
+            <p class="text-sm text-slate-500">Check-ins</p>
+            <p id="statTotal" class="text-2xl font-bold mt-1">–</p>
+        </div>
+        <div class="fade-up bg-white rounded-2xl border border-slate-200 p-5">
+            <p class="text-sm text-slate-500">People</p>
+            <p id="statPeople" class="text-2xl font-bold mt-1 text-emerald-600">–</p>
+        </div>
+        <div class="fade-up bg-white rounded-2xl border border-slate-200 p-5">
+            <p class="text-sm text-slate-500">Days</p>
+            <p id="statDays" class="text-2xl font-bold mt-1 text-violet-600">–</p>
+        </div>
+        <div class="fade-up bg-white rounded-2xl border border-slate-200 p-5 min-w-0">
+            <p class="text-sm text-slate-500">Latest</p>
+            <p id="statLatest" class="text-base font-bold mt-2 truncate">–</p>
+        </div>
+    </section>
 
-            <!-- Loading and Empty States -->
-            <div id="loadingMessage" class="text-center py-8">
-                <p class="text-gray-500">Loading records...</p>
+    <section class="bg-white rounded-2xl border border-slate-200 fade-up">
+        <!-- Filters -->
+        <div class="p-5 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center gap-3">
+            <div class="flex gap-2 text-sm font-medium">
+                <button data-range="today" class="range px-3 py-1.5 rounded-full">Today</button>
+                <button data-range="week" class="range px-3 py-1.5 rounded-full">Last 7 days</button>
+                <button data-range="all" class="range px-3 py-1.5 rounded-full">All time</button>
             </div>
-            <div id="emptyMessage" class="text-center py-8 hidden">
-                <p class="text-gray-500">No attendance records found</p>
-            </div>
-
-            <!-- Statistics -->
-            <div class="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="bg-blue-50 rounded-lg p-4 text-center">
-                    <h3 class="text-lg font-semibold text-blue-700">Total Records</h3>
-                    <p id="totalRecords" class="text-2xl font-bold text-blue-600">0</p>
+            <div class="flex flex-col sm:flex-row gap-3 lg:ml-auto">
+                <div class="relative">
+                    <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
+                    <input id="searchInput" type="text" placeholder="Search name..."
+                           class="w-full sm:w-56 pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white">
                 </div>
-                <div class="bg-green-50 rounded-lg p-4 text-center">
-                    <h3 class="text-lg font-semibold text-green-700">Unique Persons</h3>
-                    <p id="uniquePersons" class="text-2xl font-bold text-green-600">0</p>
-                </div>
-                <div class="bg-purple-50 rounded-lg p-4 text-center">
-                    <h3 class="text-lg font-semibold text-purple-700">Latest Entry</h3>
-                    <p id="latestEntry" class="text-sm font-bold text-purple-600">-</p>
-                </div>
+                <input id="dateFilter" type="date" title="Pick a specific day"
+                       class="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white">
+                <button id="clearFilters" class="hidden px-3 py-2 text-sm font-medium text-slate-500 hover:text-slate-800">Clear</button>
             </div>
         </div>
-    </div>
 
-    <script>
-        const recordsTable = document.getElementById('recordsTable');
-        const loadingMessage = document.getElementById('loadingMessage');
-        const emptyMessage = document.getElementById('emptyMessage');
-        const searchInput = document.getElementById('searchInput');
-        const dateFilter = document.getElementById('dateFilter');
-        const clearFilters = document.getElementById('clearFilters');
-        const totalRecords = document.getElementById('totalRecords');
-        const uniquePersons = document.getElementById('uniquePersons');
-        const latestEntry = document.getElementById('latestEntry');
+        <!-- Table -->
+        <div class="overflow-x-auto scroll-thin">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-left text-xs font-semibold uppercase tracking-wide text-slate-500 bg-slate-50">
+                        <th class="px-5 py-3">Name</th>
+                        <th class="px-5 py-3">Date</th>
+                        <th class="px-5 py-3">Time</th>
+                        <th class="px-5 py-3 text-right">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="recordsTable" class="divide-y divide-slate-100"></tbody>
+            </table>
+        </div>
 
-        let allRecords = [];
+        <!-- Empty / loading -->
+        <div id="emptyState" class="text-center py-16 px-6">
+            <p id="emptyText" class="text-slate-400">Loading records...</p>
+        </div>
 
-        // Load records on page load
-        document.addEventListener('DOMContentLoaded', loadRecords);
+        <!-- Pagination -->
+        <div id="pager" class="hidden px-5 py-4 border-t border-slate-100 flex items-center justify-between text-sm">
+            <p id="pageInfo" class="text-slate-500"></p>
+            <div class="flex gap-2">
+                <button id="prevPage" class="px-3 py-1.5 rounded-lg border border-slate-200 font-medium hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">← Prev</button>
+                <button id="nextPage" class="px-3 py-1.5 rounded-lg border border-slate-200 font-medium hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">Next →</button>
+            </div>
+        </div>
+    </section>
+{% endblock %}
 
-        // Filter records
-        searchInput.addEventListener('input', filterRecords);
-        dateFilter.addEventListener('change', filterRecords);
-        clearFilters.addEventListener('click', () => {
-            searchInput.value = '';
+{% block scripts %}
+<script>
+    const PAGE_SIZE = 15;
+    const recordsTable = document.getElementById('recordsTable');
+    const searchInput = document.getElementById('searchInput');
+    const dateFilter = document.getElementById('dateFilter');
+    const clearFilters = document.getElementById('clearFilters');
+    let allRecords = [];
+    let filtered = [];
+    let range = 'all';
+    let page = 1;
+
+    function prettyDate(date) {
+        if (date === todayISO()) return 'Today';
+        const d = new Date(`${date}T00:00:00`);
+        return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+    }
+
+    function daysAgoISO(n) {
+        const d = new Date();
+        d.setDate(d.getDate() - n);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    // Range chips
+    document.querySelectorAll('.range').forEach(btn => {
+        btn.addEventListener('click', () => {
+            range = btn.dataset.range;
             dateFilter.value = '';
-            filterRecords();
+            applyFilters();
         });
+    });
+    function updateRangeChips() {
+        document.querySelectorAll('.range').forEach(btn => {
+            const active = !dateFilter.value && btn.dataset.range === range;
+            btn.className = 'range px-3 py-1.5 rounded-full transition-colors ' +
+                (active ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200');
+        });
+    }
 
-        async function loadRecords() {
-            try {
-                const response = await fetch('/api/get_attendance');
-                const result = await response.json();
-                
-                if (result.success) {
-                    allRecords = result.data;
-                    displayRecords(allRecords);
-                    updateStatistics(allRecords);
-                } else {
-                    showEmptyState();
-                }
-            } catch (error) {
-                showEmptyState();
-            }
-        }
+    function applyFilters() {
+        const term = searchInput.value.trim().toLowerCase();
+        const day = dateFilter.value;
+        const from = range === 'today' ? todayISO() : range === 'week' ? daysAgoISO(6) : '';
 
-        function displayRecords(records) {
-            if (records.length === 0) {
-                showEmptyState();
-                return;
-            }
+        filtered = allRecords.filter(r =>
+            r.name.toLowerCase().includes(term) &&
+            (day ? r.date === day : (!from || r.date >= from))
+        );
+        clearFilters.classList.toggle('hidden', !term && !day && range === 'all');
+        page = 1;
+        updateRangeChips();
+        updateStats();
+        render();
+    }
 
-            loadingMessage.classList.add('hidden');
-            emptyMessage.classList.add('hidden');
+    function updateStats() {
+        document.getElementById('statTotal').textContent = filtered.length;
+        document.getElementById('statPeople').textContent = new Set(filtered.map(r => r.name.toLowerCase())).size;
+        document.getElementById('statDays').textContent = new Set(filtered.map(r => r.date)).size;
+        const latest = filtered[0];
+        document.getElementById('statLatest').textContent = latest ? `${latest.name} · ${timeAgo(latest.date, latest.time)}` : '–';
+    }
 
-            recordsTable.innerHTML = records.map(record => `
-                <tr class="hover:bg-gray-50">
-                    <td class="border border-gray-300 px-4 py-2">${record.id}</td>
-                    <td class="border border-gray-300 px-4 py-2 font-semibold">${record.name}</td>
-                    <td class="border border-gray-300 px-4 py-2">${record.date}</td>
-                    <td class="border border-gray-300 px-4 py-2">${record.time}</td>
-                    <td class="border border-gray-300 px-4 py-2">
-                        <span class="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">Present</span>
-                    </td>
-                </tr>
-            `).join('');
-        }
+    function render() {
+        const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+        page = Math.min(page, pages);
+        const start = (page - 1) * PAGE_SIZE;
+        const rows = filtered.slice(start, start + PAGE_SIZE);
 
-        function filterRecords() {
-            const searchTerm = searchInput.value.toLowerCase();
-            const dateTerm = dateFilter.value;
-
-            const filtered = allRecords.filter(record => {
-                const matchesSearch = record.name.toLowerCase().includes(searchTerm);
-                const matchesDate = !dateTerm || record.date === dateTerm;
-                return matchesSearch && matchesDate;
-            });
-
-            displayRecords(filtered);
-            updateStatistics(filtered);
-        }
-
-        function updateStatistics(records) {
-            totalRecords.textContent = records.length;
-            
-            const uniqueNames = new Set(records.map(record => record.name));
-            uniquePersons.textContent = uniqueNames.size;
-            
-            if (records.length > 0) {
-                const latest = records[0];
-                latestEntry.textContent = `${latest.name} - ${latest.date} ${latest.time}`;
-            } else {
-                latestEntry.textContent = '-';
-            }
-        }
-
-        function showEmptyState() {
-            loadingMessage.classList.add('hidden');
-            emptyMessage.classList.remove('hidden');
+        const empty = document.getElementById('emptyState');
+        if (rows.length === 0) {
             recordsTable.innerHTML = '';
-            updateStatistics([]);
+            empty.classList.remove('hidden');
+            document.getElementById('emptyText').innerHTML = allRecords.length === 0
+                ? 'No attendance records yet.<br><a href="/attendance" class="inline-block mt-3 text-indigo-600 font-semibold hover:text-indigo-800">Go to Check In →</a>'
+                : 'No records match your filters.';
+            document.getElementById('pager').classList.add('hidden');
+            return;
         }
-    </script>
-</body>
-</html>
+        empty.classList.add('hidden');
+
+        recordsTable.innerHTML = rows.map(r => `
+            <tr class="hover:bg-slate-50">
+                <td class="px-5 py-3">
+                    <div class="flex items-center gap-3">
+                        ${avatar(r.name, 'w-8 h-8 text-xs')}
+                        <span class="font-semibold whitespace-nowrap">${esc(r.name)}</span>
+                    </div>
+                </td>
+                <td class="px-5 py-3 text-slate-600 whitespace-nowrap">${esc(prettyDate(r.date))}</td>
+                <td class="px-5 py-3 text-slate-600 tabular-nums">${esc(shortTime(r.time))}</td>
+                <td class="px-5 py-3 text-right">
+                    <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">Present</span>
+                </td>
+            </tr>
+        `).join('');
+
+        const pager = document.getElementById('pager');
+        pager.classList.toggle('hidden', pages <= 1);
+        document.getElementById('pageInfo').textContent =
+            `Showing ${start + 1}–${start + rows.length} of ${filtered.length}`;
+        document.getElementById('prevPage').disabled = page <= 1;
+        document.getElementById('nextPage').disabled = page >= pages;
+    }
+
+    document.getElementById('prevPage').addEventListener('click', () => { page--; render(); });
+    document.getElementById('nextPage').addEventListener('click', () => { page++; render(); });
+    searchInput.addEventListener('input', applyFilters);
+    dateFilter.addEventListener('change', applyFilters);
+    clearFilters.addEventListener('click', () => {
+        searchInput.value = '';
+        dateFilter.value = '';
+        range = 'all';
+        applyFilters();
+    });
+
+    async function loadRecords() {
+        try {
+            const response = await fetch('/api/get_attendance');
+            const data = await response.json();
+            if (!data.success) throw new Error(data.message);
+            allRecords = data.data;
+            applyFilters();
+        } catch (error) {
+            document.getElementById('emptyText').textContent = 'Could not load records. Is the server running?';
+        }
+    }
+    loadRecords();
+</script>
+{% endblock %}
