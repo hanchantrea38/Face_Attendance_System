@@ -1,5 +1,4 @@
 from flask import Flask, render_template, request, jsonify, send_file
-import cv2
 import numpy as np
 import os
 import sqlite3
@@ -10,6 +9,16 @@ from datetime import datetime
 import base64
 
 app = Flask(__name__)
+
+# Anything that fails while the app starts is stored here instead of crashing
+# the whole server, so the pages still load and /health shows the real error.
+STARTUP_ERRORS = []
+
+try:
+    import cv2
+except Exception as e:
+    cv2 = None
+    STARTUP_ERRORS.append(f'OpenCV failed to load: {e}')
 
 
 # =========================
@@ -28,8 +37,11 @@ if os.environ.get('VERCEL'):
     for folder in ('database', 'dataset', 'trained_data'):
         src = os.path.join(BASE_DIR, folder)
         dst = os.path.join(TMP_DIR, folder)
-        if os.path.isdir(src) and not os.path.exists(dst):
-            shutil.copytree(src, dst)
+        try:
+            if os.path.isdir(src) and not os.path.exists(dst):
+                shutil.copytree(src, dst)
+        except Exception as e:
+            STARTUP_ERRORS.append(f'Could not copy {folder} to /tmp: {e}')
     BASE_DIR = TMP_DIR
 
 DATABASE_FOLDER = os.path.join(BASE_DIR, 'database')
@@ -65,12 +77,20 @@ def init_db():
         print(f"Connected to database: {DB_PATH}")
 
 # Create necessary directories
-os.makedirs(DATASET_FOLDER, exist_ok=True)
-os.makedirs(TRAINED_DATA_FOLDER, exist_ok=True)
-os.makedirs(DATABASE_FOLDER, exist_ok=True)
+try:
+    os.makedirs(DATASET_FOLDER, exist_ok=True)
+    os.makedirs(TRAINED_DATA_FOLDER, exist_ok=True)
+    os.makedirs(DATABASE_FOLDER, exist_ok=True)
+except Exception as e:
+    STARTUP_ERRORS.append(f'Could not create data folders: {e}')
 
 # Initialize face detector and recognizer
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+face_cascade = None
+if cv2 is not None:
+    try:
+        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    except Exception as e:
+        STARTUP_ERRORS.append(f'Face detector failed to load: {e}')
 using_simple_recognizer = False
 SIMPLE_RECOGNIZER_THRESHOLD = 350.0
 LBPH_RECOGNIZER_THRESHOLD = 100.0
@@ -171,7 +191,17 @@ except AttributeError:
         using_simple_recognizer = True
         print("Using simple face recognizer")
 
-init_db()
+try:
+    init_db()
+except Exception as e:
+    STARTUP_ERRORS.append(f'Database setup failed: {e}')
+
+
+def startup_error_response():
+    """Return a JSON error if face features can't work, otherwise None."""
+    if cv2 is None or face_cascade is None:
+        return jsonify({'success': False, 'message': 'Server setup error: ' + '; '.join(STARTUP_ERRORS)})
+    return None
 
 @app.route('/')
 def index():
@@ -180,6 +210,8 @@ def index():
 
 @app.route('/health')
 def health():
+    if STARTUP_ERRORS:
+        return jsonify({'success': False, 'status': 'error', 'errors': STARTUP_ERRORS})
     return jsonify({'success': True, 'status': 'ok'})
 
 @app.route('/register')
@@ -196,6 +228,9 @@ def view_records():
 
 @app.route('/api/register_face', methods=['POST'])
 def register_face():
+    error = startup_error_response()
+    if error:
+        return error
     try:
         name = request.form['name'].strip()
         image_data = request.form['image']
@@ -249,6 +284,9 @@ def register_face():
 
 @app.route('/api/mark_attendance', methods=['POST'])
 def mark_attendance():
+    error = startup_error_response()
+    if error:
+        return error
     try:
         image_data = request.form['image']
         
